@@ -45,8 +45,8 @@ XML::Merge - flexibly merge XML documents
 
 =head1 VERSION
 
-This documentation refers to version 1.0.4CAL5IS of 
-XML::Merge, which was released on Fri Dec 10 21:05:18:28 2004.
+This documentation refers to version 1.2.4CCJWiB of 
+XML::Merge, which was released on Sun Dec 12 19:32:44:11 2004.
 
 =head1 SYNOPSIS
 
@@ -263,6 +263,10 @@ Revision history for Perl extension XML::Merge:
 
 =over 4
 
+=item - 1.2.4CCJWiB  Sun Dec 12 19:32:44:11 2004
+
+* guessing how to fix Darwin test failure @ t/02prune.t first prune() call
+
 =item - 1.0.4CAL5IS  Fri Dec 10 21:05:18:28 2004
 
 * fixed buggy _recmerge
@@ -359,7 +363,7 @@ XML::Merge requires:
 
 L<Carp>                to allow errors to croak() from calling sub
 
-L<XML::XPath>          to use XPath statements to query && update XML
+L<XML::Tidy>           to use objects derived from XPath to update XML
 
 =head1 LICENSE
 
@@ -437,9 +441,9 @@ require      XML::Tidy;
 use base qw( XML::Tidy );
 use Carp;
 use XML::XPath;
-our $VERSION     = '1.0.4CAL5IS'; # major . minor . PipTimeStamp
+our $VERSION     = '1.2.4CCJWiB'; # major . minor . PipTimeStamp
 our $PTVR        = $VERSION; $PTVR =~ s/^\d+\.\d+\.//; # strip major and minor
-# Please see `perldoc Time::PT` for an explanation of $PTVR
+# Please see `perldoc Time::PT` for an explanation of $PTVR.
 
 my $DBUG = 0;
 

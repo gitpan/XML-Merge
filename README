@@ -45,8 +45,8 @@ XML::Merge - flexibly merge XML documents
 
 VERSION
 
-This documentation refers to version 1.0.4CAL5IS of 
-XML::Merge, which was released on Fri Dec 10 21:05:18:28 2004.
+This documentation refers to version 1.2.4CCJWiB of 
+XML::Merge, which was released on Sun Dec 12 19:32:44:11 2004.
 
 SYNOPSIS
 
@@ -257,6 +257,10 @@ CHANGES
 
 Revision history for Perl extension XML::Merge:
 
+- 1.2.4CCJWiB  Sun Dec 12 19:32:44:11 2004
+
+* guessing how to fix Darwin test failure @ t/02prune.t first prune() call
+
 - 1.0.4CAL5IS  Fri Dec 10 21:05:18:28 2004
 
 * fixed buggy _recmerge
@@ -351,7 +355,7 @@ XML::Merge requires:
 
 L<Carp>                to allow errors to croak() from calling sub
 
-L<XML::XPath>          to use XPath statements to query && update XML
+L<XML::Tidy>           to use objects derived from XPath to update XML
 
 LICENSE
 

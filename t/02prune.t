@@ -1,6 +1,12 @@
 use Test;
 BEGIN { plan tests => 15 }
 
+# Does Darwin test need any of these 3 'use' lines?  They should already be
+#   required by Merge as base classes but hopefully this will let test pass.
+use XML::XPath;
+use XML::XPath::XMLParser;
+use XML::Tidy;
+
 use XML::Merge;
 
 my $mobj; ok(1);

@@ -45,8 +45,8 @@ XML::Merge - flexibly merge XML documents
 
 =head1 VERSION
 
-This documentation refers to version 1.0.4CAEU0I of 
-XML::Merge, which was released on Fri Dec 10 14:30:00:18 2004.
+This documentation refers to version 1.0.4CAJowN of 
+XML::Merge, which was released on Fri Dec 10 19:50:58:23 2004.
 
 =head1 SYNOPSIS
 
@@ -263,6 +263,10 @@ Revision history for Perl extension XML::Merge:
 
 =over 4
 
+=item - 1.0.4CAJowN  Fri Dec 10 19:50:58:23 2004
+
+* fixed buggy _recmerge
+
 =item - 1.0.4CAEU0I  Fri Dec 10 14:30:00:18 2004
 
 * made accessors for _id_xpath_list
@@ -433,11 +437,11 @@ require      XML::Tidy;
 use base qw( XML::Tidy );
 use Carp;
 use XML::XPath;
-our $VERSION     = '1.0.4CAEU0I'; # major . minor . PipTimeStamp
+our $VERSION     = '1.0.4CAJowN'; # major . minor . PipTimeStamp
 our $PTVR        = $VERSION; $PTVR =~ s/^\d+\.\d+\.//; # strip major and minor
 # Please see `perldoc Time::PT` for an explanation of $PTVR
 
-my $DBUG = 0;
+my $DBUG = 1;
 
 sub new {
   my $clas = shift(); my @parm; my $cres = 'main';
@@ -550,11 +554,13 @@ sub merge { # under water
           my $mtch = 0; # flag to know if already matched
           # test ID paths
           foreach my $idat (@{$self->get_id_xpath_list()}) {
+            print "    idat matching against:$idat\n" if($DBUG);
             # if a child merge elem has a matching id, search main for same
             my($mgmt)= $_->findnodes($idat); # MerG MaTch
             if(defined($mgmt)) {
+              print "    Matched idat:$idat\n" if($DBUG);
               my $mnmt;
-              if     ($idat =~ /^\/\/\@/) {
+              if     ($idat =~ /^\@/) {
                 ($mnmt)= $mnrn->findnodes($_->getLocalName() . '[' . $idat . '="' . $mgmt->getNodeValue() . '"]');
               } elsif($idat =~ /\[\@\w+\]/) {
                 my $itmp = $idat; my $nval = $mgmt->getNodeValue();
@@ -671,7 +677,7 @@ sub _recmerge { # recursively merge XML elements
           my($mgmt)= $_->findnodes($idat); # MerG MaTch
           if(defined($mgmt)) {
             my $mnmt;
-            if     ($idat =~ /^\/\/\@/) {
+            if     ($idat =~ /^\@/) {
               ($mnmt)= $mnnd->findnodes($_->getLocalName() . '[' . $idat . '="' . $mgmt->getNodeValue() . '"]');
             } elsif($idat =~ /\[\@\w+\]/) {
               my $itmp = $idat; my $nval = $mgmt->getNodeValue();

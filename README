@@ -45,8 +45,8 @@ XML::Merge - flexibly merge XML documents
 
 VERSION
 
-This documentation refers to version 1.0.4CAEU0I of 
-XML::Merge, which was released on Fri Dec 10 14:30:00:18 2004.
+This documentation refers to version 1.0.4CAJowN of 
+XML::Merge, which was released on Fri Dec 10 19:50:58:23 2004.
 
 SYNOPSIS
 
@@ -256,6 +256,10 @@ A new list can assigned to the XML::Merge object's id_xpath_list.
 CHANGES
 
 Revision history for Perl extension XML::Merge:
+
+- 1.0.4CAJowN  Fri Dec 10 19:50:58:23 2004
+
+* fixed buggy _recmerge
 
 - 1.0.4CAEU0I  Fri Dec 10 14:30:00:18 2004
 

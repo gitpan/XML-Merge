@@ -3,7 +3,7 @@ use ExtUtils::MakeMaker;
 # # the contents of the Makefile that is written.
 WriteMakefile(
   'NAME'         => 'XML::Merge',
-  'VERSION'      => '1.0.4CAEU0I',
+  'VERSION'      => '1.0.4CAJowN',
   'ABSTRACT'     => 'flexibly merge XML documents',
   'AUTHOR'       => 'Pip Stuart <Pip@CPAN.Org>',
   'EXE_FILES'    => [ 

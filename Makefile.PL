@@ -3,14 +3,13 @@ use ExtUtils::MakeMaker;
 # # the contents of the Makefile that is written.
 WriteMakefile(
   'NAME'         => 'XML::Merge',
-  'VERSION'      => '1.0.4C2Nf0R',
-  'ABSTRACT'     => 'flexibly merge (&& tidy) XML documents',
+  'VERSION'      => '1.0.4CAEU0I',
+  'ABSTRACT'     => 'flexibly merge XML documents',
   'AUTHOR'       => 'Pip Stuart <Pip@CPAN.Org>',
   'EXE_FILES'    => [ 
-                      'bin/xmltidy',
                     ],
   'PREREQ_PM'    => {
-    'XML::XPath::XMLParser'          => 0,
+    'XML::Tidy'                      => 0,
     'XML::XPath'                     => 0,
   }, # Module::Name => 1.1,
   'dist'         => { 'COMPRESS' => 'gzip', 'SUFFIX' => 'tgz' },

@@ -1,12 +1,6 @@
 #!/usr/bin/perl -w
 # 4AIDCLW - XML::Merge.pm created by Pip Stuart <Pip@CPAN.Org>
-#   to intelligently merge && tidy XML documents as parsed
-#   XML::XPath objects.
-# Note: I didn't use '#!/usr/bin/perl -w' above because I need to redefine
-#   node_test() && toString() XPath functions below in order to preserve
-#   processing-instructions in merged or tidied documents.  Normally -w
-#   warnings are very good. =)
-# Note: heh now -w is back because I'm commenting the overrides below. =)
+#   to intelligently merge XML documents as parsed XML::XPath objects.
 #
 # Plan:
 #   if    same-named root nodes,
@@ -16,13 +10,14 @@
 #   else
 #     append 2nd root as new last child of 1st root
 #
-#     XML::Merge new(filename => 'fnam'[, <other options> ]) (inherit XPath?)
-#       just creates XPath obj but has merge() member which creates another
-#       XPobj && blends result back into main obj.
+#     XML::Merge new(filename => 'fnam'[, <other options> ])
+#       inherits XML::Tidy which inherits XML::XPath.
+#       Merge creates an object with a merge() member which creates another
+#       XPath object && combines the result back into the main object.
 #     optn:
 #       merge below specified context
 #       id attributes: 'id', 'name', && 'handle' (default)
-#       join comments of same context (default)
+#       join comments of same context (leave separate default)
 #       source-file-stamp merged comments
 #              time-stamp merged comments
 #                pt-stamp merged comments
@@ -30,11 +25,10 @@
 #       main    wins (default)
 #       last-in wins (aka. clobber)
 #       newer modification date wins
-#       warn
+#       warn (croak conflict)
+#       test (don't merge anything, just return true if no conflicts)
 #     members:
 #       merge() (can accept tmp override optz)
-#       write()
-#       prune()
 #       unmerge()
 #
 #   option to rename some XPath to something else so like simple example
@@ -47,61 +41,57 @@
 
 =head1 NAME
 
-XML::Merge - flexibly merge (&& tidy) XML documents
+XML::Merge - flexibly merge XML documents
 
 =head1 VERSION
 
-This documentation refers to version 1.0.4C2Nf0R of 
-XML::Merge, which was released on Thu Dec  2 23:41:00:27 2004.
+This documentation refers to version 1.0.4CAEU0I of 
+XML::Merge, which was released on Fri Dec 10 14:30:00:18 2004.
 
 =head1 SYNOPSIS
 
   use XML::Merge;
 
-  # create new       XML::Merge object from         MainFile.xml
-  my $main_xml_doc = XML::Merge->new('filename' => 'MainFile.xml');
-  # Merge File2Add.xml                 into         MainFile.xml
-     $main_xml_doc->merge(           'filename' => 'File2Add.xml');
-  # Tidy up the indenting on the merged data
-     $main_xml_doc->tidy();
-  # Write out changes back to MainFile.xml
-     $main_xml_doc->write();
+  # create new    XML::Merge object from         MainFile.xml
+  my $merge_obj = XML::Merge->new('filename' => 'MainFile.xml');
+
+  # Merge File2Add.xml              into         MainFile.xml
+     $merge_obj->merge(           'filename' => 'File2Add.xml');
+
+  # Tidy up the indenting that resulted from the merge
+     $merge_obj->tidy();
+
+  # Write out changes back            to         MainFile.xml
+     $merge_obj->write();
 
 =head1 DESCRIPTION
 
-This module utilizes underlying parsed L<XML::XPath> objects to merge
-separate XML documents according to certain rules && configurable
-options.  If both documents have root nodes which are elements of
-the same name, the documents are merged directly.  Otherwise, one
-is merged as a child of the other.  An optional XPath location can
-be specified as the place to perform the merge.  If no location is
-specified, the merge is attempted at the first matching element or is
-appended as the new last child of the other root if no match is found.
+This module inherits from L<XML::Tidy> which in turn inherits from
+L<XML::XPath>.  This ensures that Merge objects' indenting can be
+tidied up after any merge operation since such modification usually
+spells the ruination of indentation.  Polymorphism allows Merge
+objects to be utilized as normal XML::XPath objects as well.
 
-This module also contains some utilities for stripping or tidying up
-indenting levels of contained text nodes.  This comes in handy because
-merging documents usually results in the ruination of indentation.
+The merging behavior is setup to combine separate XML documents
+according to certain rules && configurable options.  If both
+documents have root nodes which are elements of the same name, the
+documents are merged directly.  Otherwise, one is merged as a child
+of the other.  An optional XPath location can be specified as the
+place to perform the merge.  If no location is specified, the merge
+is attempted at the first matching element or is appended as the new
+last child of the other root if no match is found.
 
 =head1 2DO
 
 =over 2
 
-=item - mk namespaces && attz stay in order after tidy() or merge()
+=item - mk namespaces && attz stay in order after merge()
 
-=item - fix reload() from messing up unicode escaped &XYZ; components like
-          Copyright &#xA9; -> © && Registered &#xAE; -> ®
-
-=item - mk _idea take XPath locations instead of elem name keys
-
-=item - mk good accessors for _idea
-
-=item - mk txt apnd optn
+=item - mk txt apnd merg optn
 
 =item - handle comment joins && stamping && options
 
 =item - support modification-time _cres
-
-=item - fix 03keep.t to pass && pkg
 
 =item - add _ignr ignore list of merg xplc's to not merge (pre-prune())
 
@@ -115,10 +105,10 @@ merging documents usually results in the ruination of indentation.
 
 =head2 new()
 
-This is the standard Merge object constructor.  It can take
-parameters like an L<XML::XPath> object constructor to initialize
-the primary XML document object (the object which subsequent
-XML documents will be merged into).  These options can be any one of:
+This is the standard Merge object constructor.  It can take the
+same parameters as an L<XML::XPath> object constructor to initialize
+the primary XML document object (the object which subsequent XML
+documents will be merged into).  These parameters can be any one of:
 
   'filename' => 'SomeFile.xml'
   'xml'      => $variable_which_holds_a_bunch_of_XML_data
@@ -128,11 +118,13 @@ XML documents will be merged into).  These options can be any one of:
 Merge's new() can also accept merge-option parameters to
 override the default merge behavior.  These include:
 
-  'conflict_resolution_method' => 'main' # main  file wins
-  'conflict_resolution_method' => 'merg' # merge file wins
-  'conflict_resolution_method' => 'warn' # print warnings
+  'conflict_resolution_method' => 'main', # main  file wins
+  'conflict_resolution_method' => 'merg', # merge file wins
                    # 'last-in_wins' is an alias for 'merg'
-  # other options should be added later according to utility
+  'conflict_resolution_method' => 'warn', # croak conflicts
+  'conflict_resolution_method' => 'test', # just test, 0 if conflict
+  # this option is not implemented yet
+  'comment_join_method' => 'none',
 
 =head2 merge()
 
@@ -168,122 +160,123 @@ merge-options && second by the particular method call's merge-options.
 Thus, if the default merge-option for conflict resolution is to
 have the main object win && you use the following constructor:
 
-  my $main_xml_doc = XML::Merge->new(
+  my $merge_obj = XML::Merge->new(
     'filename'                   => 'MainFile.xml',
     'conflict_resolution_method' => 'last-in_wins');
 
-... then any $main_xml_doc->merge() call would override the
+... then any $merge_obj->merge() call would override the
 default merge behavior by letting the document being merged have
 priority over the main object's document.  However, you could
 supply additional merge-options in the parameter list of your
 specific merge() call like:
 
-  $main_xml_doc->merge(
+  $merge_obj->merge(
     'filename'                   => 'File2Add.xml',
     'conflict_resolution_method' => 'warn');
 
 ... then the latest option would override the already overridden.
 
+The 'test' conflict_resolution_method merge-option does not modify the
+object at all.  It solely returns true if no conflict is encountered.
+It should be used like:
+
+  foreach(@files) {
+    if($merge_obj->merge('cres' => 'test', $_)) {
+      $merge_obj->merge($_); # only do it if there's no conflicts
+    } else {
+      croak("Yipes! Conflict with file:$_!\n");
+    }
+  }
+
 merge() can also accept another XML::Merge object as a parameter
-for what to be merged with the main object like:
+for what to be merged with the main object instead of a filename.
+An example of this is:
 
-  $main_xml_doc->merge(
-    'merge_object'               => $another_merge_obj);
+  $merge_obj->merge($another_merge_obj);
 
-or just:
+Along with the merge options that can be specified in the object
+constructor, merge() also accepts the following options to specify
+where to perform the merge relative to:
 
-  $main_xml_doc->merge($another_merge_obj);
-
-=head2 strip()
-
-The strip() member function searches the Merge object's child
-XPath object for all mixed-content (ie. non-data) text nodes &&
-empties them out.  This will basically unformat (clear out) any
-markup indenting.  strip() is probably barely useful by itself
-but it is needed by tidy() && it is exposed as a method in case
-it comes in handy for other uses.
-
-=head2 tidy()
-
-The tidy() member function can take two optional parameters:
-
-  'indent_type'   => 'spaces', # or 'tabs'
-  'indent_repeat' => 2         # number of times to repeat per indent
-
-The default behavior is to use two (2) spaces for each indent level.
-The Merge object's XPath object gets all mixed-content (ie. non-
-data) text nodes reformatted to appropriate indent levels according
-to tree nesting depth.
-
-=head2 write()
-
-The write() member function can take an optional filename parameter
-to write out any changes which have resulted from any number of calls
-to merge() or tidy().  If no parameters are given, write() overwrites
-the original primary XML document file.
-
-write() can also accept an XPath location to treat as the root node
-(element) to be written out to a disk file.  If the XPath statement
-matches many elements, only the first encountered will be written out
-as the new root element.  The object will remain unchanged (ie. even
-though the disk file may now have a new root node, the object would
-remain as it was with a potentially different root node that is an
-ancestor of the written one).  If no elements are found at a
-specified XPath location, no file is written.
-
-=head2 prune()
-
-The prune() member function takes an XPath location to remove (along
-with all of its attributes && child nodes) from the Merge
-object.
+  'merge_destination_path' => $main_obj_xpath,
+  'merge_source_path'      => $merging_obj_xpath,
 
 =head2 unmerge()
 
 The unmerge() member function is a shorthand for calling both write()
 && prune() on a certain XPath location which should be written out
-to a disk file before being removed from the Merge object.  This
-process could be the opposite of merge if no original elements or
-attributes overlapped && combined but if combining did happen, this
-would remove original sections of your primary XML document's data
-from your Merge object so please use this carefully.  It is meant
-to help separate a giant object (probably the result of myriad merge()
-calls) back into separate useful well-formed XML documents on disk.
+to a disk file before being removed from the Merge object.
 
-unmerge() should be provided key => value pairs for both 'filename' &&
-'xpath_location'.
+This unmerge() process could be the opposite of merge() if no original
+elements or attributes overlapped && combined but if combining did
+happen, this would remove original sections of your primary XML
+document's data from your Merge object so please use this carefully.
+It is meant to help separate a giant object (probably the result of
+myriad merge() calls) back into separate useful well-formed XML
+documents on disk.
+
+unmerge() takes a filename && an xpath_location parameter.
 
 =head1 Accessors
 
-=head2 _filename()
+=head2 get_object_to_merge()
 
-Returns the underlying filename (if any) associated with this object.
-An optional new filename can be provided as a parameter to override
-(or initialize) the object's filename.
+Returns the object which was last merged into the main object.
 
-=head2 _xpath_object()
+=head2 set_object_to_merge()
 
-Returns the underlying L<XML::XPath> object.  An optional L<XML::XPath>
-object can be provided as a parameter to assign the underlying
-object (which will clobber any existing object along with all data
-therein so please use caution).
+Assigns the object which was last merged into the main object.
 
-=head2 _mo_conflict_resolution_method()
+=head2 get_conflict_resolution_method()
 
 Returns the underlying merge-option conflict_resolution_method.
-An optional new value can be provided as a parameter to be assigned
+
+=head2 set_conflict_resolution_method()
+
+A new value can be provided as a parameter to be assigned
 as the XML::Merge object's merge-option.
 
-=head2 _mo_comment_join_method()
+=head2 get_comment_join_method()
 
 Returns the underlying merge-option comment_join_method.
-An optional new value can be provided as a parameter to be assigned
+
+=head2 set_comment_join_method()
+
+A new value can be provided as a parameter to be assigned
 as the XML::Merge object's merge-option.
+
+=head2 get_id_xpath_list()
+
+Returns the underlying id_xpath_list.  This is normally just a list
+of attributes (eg. '@id', '@name', '@handle') which are unique
+identifiers for any XML element.  When these attribute names are
+encountered during a merge(), another element with the same name &&
+attribute value are matched for further merging && conflict resolution.
+
+=head2 set_id_xpath_list()
+
+A new list can assigned to the XML::Merge object's id_xpath_list.
 
 =head1 CHANGES
 
 Revision history for Perl extension XML::Merge:
 
 =over 4
+
+=item - 1.0.4CAEU0I  Fri Dec 10 14:30:00:18 2004
+
+* made accessors for _id_xpath_list
+
+* made _id_xpath_list take XPath locations instead of elem names (old _idea)
+
+* made test _cres (at Marc's request)
+
+* made warn _cres croak
+
+* made Merge inherit from Tidy (which inherits from XPath)
+
+* separated reload(), strip(), tidy(), prune(), && write() into own
+    XML::Tidy module
 
 =item - 1.0.4C2Nf0R  Thu Dec  2 23:41:00:27 2004
 
@@ -305,9 +298,9 @@ Revision history for Perl extension XML::Merge:
 
 * made merge() accept other Merge objects
 
-* made reload() not clobber basic escapes (by overloading Text toString())
+* made reload() not clobber basic escapes (by overriding Text toString())
 
-* made tidy() not kill processing-instructions (by overloading node_test())
+* made tidy() not kill processing-instructions (by overriding node_test())
 
 * made tidy() not kill comments
 
@@ -348,13 +341,7 @@ Revision history for Perl extension XML::Merge:
 
 =head1 INSTALL
 
-If you're using ActiveState, you probably need to:
-  `md C:\Perl\site\lib\XML\' if the dir doesn't exist
-  && copy this file into that directory.
-
-If you don't understand how to do this, please ask for assistance.
-
-Otherwise, please run:
+From your command shell, please run:
 
     `perl -MCPAN -e "install XML::Merge"`
 
@@ -369,8 +356,6 @@ XML::Merge requires:
 L<Carp>                to allow errors to croak() from calling sub
 
 L<XML::XPath>          to use XPath statements to query && update XML
-
-L<XML::XPath::XMLParser> to parse XML documents into XPath objects
 
 =head1 LICENSE
 
@@ -444,129 +429,90 @@ Pip Stuart <Pip@CPAN.Org>
 package XML::Merge;
 use warnings;
 use strict;
+require      XML::Tidy;
+use base qw( XML::Tidy );
 use Carp;
 use XML::XPath;
-use XML::XPath::XMLParser;
-our $VERSION     = '1.0.4C2Nf0R'; # major . minor . PipTimeStamp
+our $VERSION     = '1.0.4CAEU0I'; # major . minor . PipTimeStamp
 our $PTVR        = $VERSION; $PTVR =~ s/^\d+\.\d+\.//; # strip major and minor
-# See `perldoc Time::PT` for an explanation of $PTVR
+# Please see `perldoc Time::PT` for an explanation of $PTVR
 
 my $DBUG = 0;
 
 sub new {
-  my $clas = shift(); my $okey; # Option hash KEY
-  my $acky; my $acvl; # Alternate Constructor KeY => VaLue
-  my $self = bless({}, $clas);
-  $self->{'_cres'} = 'main'; # Conflict RESolution method valid values:
-                             #   'main' = Main (primary) file wins
-                             #   'merg' = Merge file resolves (Last-In wins)
-                             #   'warn' = Warn about conflict && halt merge
-  $self->{'_cmtj'} = 'none'; # CoMmenT Join method        valid values:
-                             #   'none', 'separate'
-                             #   'join', 'combine'
-                             #   'jpts', 'join_with_piptime_stamp'
-                             #   'jlts', 'join_with_localtime_stamp'
-  $self->{'_idea'} = { # unique ID Element => [ Attribute ] names
-          '_ANY_'  => ['id', 'name', 'handle'], # id atts to match anywhere
-  };
-  $self->{'_flnm'} = undef;  # main FiLe NaMe
-  $self->{'_xpob'} = undef;  # XPath main OBject
-  $self->{'_mgob'} = undef;  # xpath MerG OBject
-  $self->{'_optn'} = {};     # parameter OPTioNs for each method
-  my $mtch = join('|', keys(%{$self}));
-  while($okey = shift()) {
-    if   ($okey =~ /^($mtch)$/i) { $self->{lc($okey)} = shift(); }
-    elsif($okey eq 'filename'  ) { $self->{'_flnm'  } = shift(); }
-    elsif($okey =~ /^(xml|ioref|context)$/) { $acky = $okey; $acvl = shift(); }
-    elsif($okey eq 'conflict_resolution_method') { $self->{'_cres'}= shift(); }
-    else                         { $self->{'_flnm'  } = $okey;   }
+  my $clas = shift(); my @parm; my $cres = 'main';
+  for(my $indx = 0; $indx < @_; $indx++) {
+    if($_[$indx] =~ /^[-_]?(cres$|conflict_resolution)/ && ($indx + 1) < @_) {
+      $cres = $_[++$indx];
+    } else {
+      push(@parm, $_[$indx]);
+    }
   }
-  if     (defined($acky)) {
-    $self->{'_xpob'} = XML::XPath->new($acky      => $acvl);
-  } elsif(defined($self->{'_flnm'}) && -e $self->{'_flnm'}) {
-    $self->{'_xpob'} = XML::XPath->new('filename' => $self->{'_flnm'});
-  } else {
-    print "!*EROR*!  XML::XPath object could not be created!\n  Please supply an XML filename as a parameter to new().\n";
-  }
+  my $tdob = XML::Tidy->new(@parm);
+  my $self = bless($tdob, $clas);
+  #   self just a new Tidy (XPath) obj blessed into Merge class...
+  #     ... with a few new options
+  $self->{'_object_to_merge'} = undef;
+  $self->{'_conflict_resolution_method'} = $cres;
+  #         Conflict RESolution method valid values:
+  # 'main' = Main (primary) file wins
+  # 'merg' = Merge file resolves (Last-In wins)
+  # 'warn' = Croak warning about conflict && halt merge
+  # 'test' = Test whether any conflict would occur if merge were performed
+  $self->{'_comment_join_method'} = 'none';
+  #         CoMmenT Join method        valid values:
+  # 'none', 'separate'
+  # 'join', 'combine'
+  # 'jpts', 'join_with_piptime_stamp'
+  # 'jlts', 'join_with_localtime_stamp'
+  $self->{'_id_xpath_list'} = [ # unique ID elements or attributes
+    '@id',
+    '@name',
+    '@handle',
+  ];
   return($self);
 }
 
-sub merge {
-  my $self = shift(); my $okey; $self->{'_optn'} = {};
-  my $mtch = join('|', keys(%{$self}));
-  while($okey = shift()) {
-    if     ($okey =~ /^($mtch)$/i) {
-      $self->{'_optn'}->{lc($okey)} = shift();
-    } elsif($okey eq 'filename'  ) {
-      $self->{'_optn'}->{'_flnm'  } = shift();
-    } elsif($okey =~ /^(xml|ioref|context)$/) {
-      $self->{'_optn'}->{'_acky'  } = $okey;
-      $self->{'_optn'}->{'_acvl'  } = shift();
-    } elsif($okey eq 'merge_destination_xpath') {
-      $self->{'_optn'}->{'_mdxp'  } = shift();
-    } elsif($okey eq 'merge_source_xpath') {
-      $self->{'_optn'}->{'_msxp'  } = shift();
-    } elsif($okey eq 'conflict_resolution_method') {
-      $self->{'_optn'}->{'_cres'  } = shift();
-    } elsif($okey eq 'merge_object') {
-      $self->{'_optn'}->{'_mgob'  } = shift();
-    } elsif($okey eq 'xpath_object') {
-      $self->{'_mgob'}              = shift();
+sub merge { # under water
+  my $self = shift(); my @parm;
+  my $cres = $self->get_conflict_resolution_method();
+  my $cmtj = $self->get_comment_join_method();
+  my $mdxp = undef;
+  my $msxp = undef;
+  my $mgob = undef;
+  # setup local options
+  for(my $indx = 0; $indx < @_; $indx++) {
+    if     ($_[$indx] =~ /^[-_]?(cres$|conflict_resolution)/ && ($indx + 1) < @_) {
+      $cres = $_[++$indx];
+    } elsif($_[$indx] =~ /^[-_]?(cmtj$|comment_join)/        && ($indx + 1) < @_) {
+      $cmtj = $_[++$indx];
+    } elsif($_[$indx] =~ /^[-_]?(mdxp$|merge_destination)/   && ($indx + 1) < @_) {
+      $mdxp = $_[++$indx];
+    } elsif($_[$indx] =~ /^[-_]?(msxp$|merge_source)/        && ($indx + 1) < @_) {
+      $msxp = $_[++$indx];
+    } elsif(ref($_[$indx]) =~ /XML::(XPath|Tidy|Merge)/) {
+      $self->set_object_to_merge($_[$indx]);
     } else {
-      if     (ref($okey) eq 'XML::Merge') {
-        print "REF:" . ref($okey) . "\n" if($DBUG);
-        $self->{'_optn'}->{'_mgob'} = $okey;
-        $self->{'_optn'}->{'_flnm'} = $self->{'_optn'}->{'_mgob'}->{'_flnm'};
-      } elsif(ref($okey) eq 'XML::XPath') {
-        print "REF:" . ref($okey) . "\n" if($DBUG);
-        $self->{'_mgob'}            = $okey;
-      } else {
-        $self->{'_optn'}->{'_flnm'} = $okey;
-      }
+      push(@parm, $_[$indx]);
     }
   }
-  # setup local option for Conflict RESolution method
-  unless(exists ($self->{'_optn'}->{'_cres'}) &&
-         defined($self->{'_optn'}->{'_cres'}) &&
-         length ($self->{'_optn'}->{'_cres'})) {
-    $self->{'_optn'}->{'_cres'} = $self->{'_cres'};
-  }
-  if($self->{'_optn'}->{'_cres'} =~ /last/) {
-    $self->{'_optn'}->{'_cres'} = 'merg';
-  }
-  if     (exists ($self->{'_optn'}->{'_mgob'}) &&
-          defined($self->{'_optn'}->{'_mgob'})) {
-    $self->{'_mgob'} = $self->{'_optn'}->{'_mgob'}->{'_xpob'};
-  } elsif(exists ($self->{'_optn'}->{'_flnm'}) &&
-          defined($self->{'_optn'}->{'_flnm'}) &&
-          length ($self->{'_optn'}->{'_flnm'}) &&
-          -e      $self->{'_optn'}->{'_flnm'} ) {
-    $self->{'_mgob'} = XML::XPath->new('filename' => $self->{'_optn'}->{'_flnm'});
-  } elsif(exists ($self->{'_optn'}->{'_acky'}) &&
-          defined($self->{'_optn'}->{'_acky'}) &&
-          length ($self->{'_optn'}->{'_acky'})) {
-    $self->{'_mgob'} = XML::XPath->new(
-      $self->{'_optn'}->{'_acky'} => $self->{'_optn'}->{'_acvl'});
-  }
-  if(exists ($self->{'_mgob'}) &&
-     defined($self->{'_mgob'})) {
+  $self->set_object_to_merge( XML::Merge->new(@parm) ) if(@parm);
+  $cres = 'merg' if($cres =~ /last/i);
+  $mgob = $self->get_object_to_merge();
+  if($mgob) {
     my $mnrn; my $mgrn;
-    # traverse _xpob && merge new mgob according to options
+    # traverse main Merge obj && merge w/ object_to_merge according to options
     # 0a. ck if root node elems have same LocalName
-    #  but short-circuit root element loading if merge_source or merge_dest
-    if(exists ($self->{'_optn'}->{'_mdxp'}) &&
-       defined($self->{'_optn'}->{'_mdxp'}) &&
-       length ($self->{'_optn'}->{'_mdxp'})) {
-      ($mnrn)= $self->{'_xpob'}->findnodes($self->{'_optn'}->{'_mdxp'});
+    #   but short-circuit root element loading if merge_source or merge_dest
+    if(defined($mdxp) && length($mdxp)) {
+      ($mnrn)= $self->findnodes($mdxp);
     } else {
-      ($mnrn)= $self->{'_xpob'}->findnodes('/*');
+      ($mnrn)= $self->findnodes('/*');
     }
-    if(exists ($self->{'_optn'}->{'_msxp'}) &&
-       defined($self->{'_optn'}->{'_msxp'}) &&
-       length ($self->{'_optn'}->{'_msxp'})) {
-      ($mgrn)= $self->{'_mgob'}->findnodes($self->{'_optn'}->{'_msxp'});
+    if(defined($msxp) && length($msxp)) {
+      ($mgrn)= $mgob->findnodes($msxp);
     } else {
-      ($mgrn)= $self->{'_mgob'}->findnodes('/*');
+      ($mgrn)= $mgob->findnodes('/*');
     }
     if($mnrn->getLocalName() eq $mgrn->getLocalName()) {
       print "Root Node Element names match so merging in place!\n" if($DBUG);
@@ -579,19 +525,22 @@ sub merge {
           print "  Found matching attr:" . $_->getLocalName() . "\n" if($DBUG);
           # must use Conflict RESolution method to know who's value wins
           if($mnat->getNodeValue() ne $_->getNodeValue()) {
-            if     ($self->{'_optn'}->{'_cres'} eq 'merg') {
+            if     ($cres eq 'merg') {
               print "    CRES:merg so setting main attr:" . $_->getLocalName() .  " to merg valu:" . $_->getNodeValue() . "\n" if($DBUG);
               $mnat->setNodeValue($_->getNodeValue());
-            } elsif($self->{'_optn'}->{'_cres'} eq 'warn') {
-              print "!*WARN*! Found conflicting attribute:" . $_->getLocalName() .
+            } elsif($cres eq 'warn') {
+              croak("!*WARN*! Found conflicting attribute:" .
+                                     $_   ->getLocalName() .
                 "\n  main value:" .  $mnat->getNodeValue() .
                 "\n  merg value:" .  $_   ->getNodeValue() .
-                "\n    Skipping... please resolve manually.\n";
+                "\n    Croaking... please resolve manually.\n");
+            } elsif($cres eq 'test') {
+              return(0);
             }
           }
         } else {
           print "  Found new      attr:" . $_->getLocalName() . "\n" if($DBUG);
-          $mnrn->appendAttribute($_);
+          $mnrn->appendAttribute($_) unless($cres eq 'test');
         }
       }
       # 1b. loop through all merge child elems
@@ -599,30 +548,26 @@ sub merge {
         foreach($mgrn->findnodes('*')) {
           print "  Found elem:" . $_->getLocalName() . "\n" if($DBUG);
           my $mtch = 0; # flag to know if already matched
-          # first test _ANY_ catch-all ID Attributes
-          foreach my $idat (@{$self->{'_idea'}->{'_ANY_'}}) {
-            # if a child merge elem has a matching _idea, search main for same
-            my($mgmt)= $_->findnodes('@' . $idat); # MerG MaTch
+          # test ID paths
+          foreach my $idat (@{$self->get_id_xpath_list()}) {
+            # if a child merge elem has a matching id, search main for same
+            my($mgmt)= $_->findnodes($idat); # MerG MaTch
             if(defined($mgmt)) {
-              my($mnmt)= $mnrn->findnodes($_->getLocalName() . '[@' . $idat . '="' . $mgmt->getNodeValue() . '"]');
-              if(defined($mnmt)) { # idea matched both main && merg...
-                print "    Matched elem:" . $_->getLocalName() . '[@' . $idat . '="' . $mgmt->getNodeValue() . '"] with elem:' . $mnmt->getLocalName() . "\n" if($DBUG);
-                $mtch = 1;
-                $self->_recmerge($mnmt, $_); # so recursively merge deeper...
+              my $mnmt;
+              if     ($idat =~ /^\/\/\@/) {
+                ($mnmt)= $mnrn->findnodes($_->getLocalName() . '[' . $idat . '="' . $mgmt->getNodeValue() . '"]');
+              } elsif($idat =~ /\[\@\w+\]/) {
+                my $itmp = $idat; my $nval = $mgmt->getNodeValue();
+                $itmp =~ s/(\[\@\w+)\]/$1="$nval"\]/;
+                ($mnmt)= $mnrn->findnodes($itmp);
+              } else {
+                ($mnmt)= $mnrn->findnodes($idat);
               }
-            }
-          }
-          # next see if current elem exists in ID Elem hash
-          if(exists($self->{'_idea'}->{$_->getLocalName()})) {
-            foreach my $idat (@{$self->{'_idea'}->{$_->getLocalName()}}) {
-              # if a child merge elem has a matching _idea, search main for same
-              my($mgmt)= $_->findnodes('@' . $idat); # MerG MaTch
-              if(defined($mgmt)) {
-                my($mnmt)= $mnrn->findnodes($_->getLocalName() . '[@' . $idat . '="' . $mgmt->getNodeValue() . '"]');
-                if(defined($mnmt)) { # idea matched both main && merg...
-                  $mtch = 1;
-                  $self->_recmerge($mnmt, $_); # so recursively merge deeper..
-                }
+              if(defined($mnmt)) { # id matched both main && merg...
+                print "    Matched elem:" . $_->getLocalName() . '[' . $idat . '="' . $mgmt->getNodeValue() . '"] with elem:' . $mnmt->getLocalName() . "\n" if($DBUG);
+                $mtch = 1; # so recursively merge deeper...
+                my $test = $self->_recmerge($mnmt, $_, $cres, $cmtj);
+                return(0) if($cres eq 'test' && !$test);
               }
             }
           }
@@ -630,26 +575,20 @@ sub merge {
             my($mnmt)= $mnrn->findnodes($_->getLocalName());
             if(defined($mnmt)) { # plain elem matched both main && merg...
               my $fail = 0;
-              foreach my $idat (@{$self->{'_idea'}->{'_ANY_'}}) {
-                my($mnat)= $mnmt->findnodes('@' . $idat); # MaiN ATtribute
-                my($mgat)= $_   ->findnodes('@' . $idat); # MerG ATtribute
+              foreach my $idat (@{$self->get_id_xpath_list()}) {
+                my($mnat)= $mnmt->findnodes($idat); # MaiN ATtribute
+                my($mgat)= $_   ->findnodes($idat); # MerG ATtribute
                 $fail = 1 if(defined($mnat) || defined($mgat));
               }
-              if(exists($self->{'_idea'}->{$_->getLocalName()})) {
-                foreach my $idat (@{$self->{'_idea'}->{$_->getLocalName()}}) {
-                  my($mnat)= $mnmt->findnodes('@' . $idat); # MaiN ATtribute
-                  my($mgat)= $_   ->findnodes('@' . $idat); # MerG ATtribute
-                  $fail = 1 if(defined($mnat) || defined($mgat));
-                }
-              }
-              unless($fail) { # fail tests if any unique id attz are in elems
-                $mtch = 1;
-                $self->_recmerge($mnmt, $_); # so recursively merge deeper..
+              unless($fail) { # fail tests if any unique id paths were found
+                $mtch = 1; # so recursively merge deeper...
+                my $test = $self->_recmerge($mnmt, $_, $cres, $cmtj);
+                return(0) if($cres eq 'test' && !$test);
               }
             }
           }
           # if none above matched, append diff child to main root node
-          $mnrn->appendChild($_) unless($mtch);
+          $mnrn->appendChild($_) unless($mtch || $cres eq 'test');
         }
       } elsif($mgrn->getChildNodes()) { # no kid elems but kid text data node
         my($mntx)= $mnrn->getChildNodes();
@@ -657,25 +596,29 @@ sub merge {
         if(defined($mgtx) && $mgtx->getNodeType() == XML::XPath::Node::TEXT_NODE) {
           print "  Found text:" . $mgrn->getLocalName() . " valu:" . $mgtx->getNodeValue() . "\n" if($DBUG);
           if     (!defined($mntx)) {
-            $mnrn->appendChild($mgtx);
-          } elsif($self->{'_optn'}->{'_cres'} eq 'merg') {
-#          $mnrn->setNodeValue($mgrn->getNodeValue());
+            $mnrn->appendChild($mgtx) unless($cres eq 'test');
+          } elsif($cres eq 'merg') {
             $mntx->setNodeValue($mgtx->getNodeValue());
-          } elsif($self->{'_optn'}->{'_cres'} eq 'warn') {
-            print "!*WARN*! Found conflicting     Root text node:" . $mnrn->getLocalName().
+          } elsif($cres eq 'warn') {
+            croak("!*WARN*! Found conflicting     Root text node:" .
+                                   $mnrn->getLocalName() .
               "\n  main value:" .  $mntx->getNodeValue() .
               "\n  merg value:" .  $mgtx->getNodeValue() .
-              "\n    Skipping... please resolve manually.\n";
+              "\n    Croaking... please resolve manually.\n");
+          } elsif($cres eq 'test') {
+            #return(0); # new text node value is not a merge prob?
           }
         }
       }
-    # 0b. ck if merge root node elem exists in somewhere in main
-    } elsif($self->{'_xpob'}->findnodes('//' . $mgrn->getLocalName())) {
+    # 0b. ck if merge root node elem exists somewhere in main
+    } elsif($self->findnodes('//' . $mgrn->getLocalName())) {
       print "Root Node Element names differ && mgrn is in mnrn so merging at match!\n" if($DBUG);
-      my($mnmt)= $self->{'_xpob'}->findnodes('//' . $mgrn->getLocalName());
-      $self->_recmerge($mnmt, $mgrn); # recurse merge main child w/ merg root
+      my($mnmt)= $self->findnodes('//' . $mgrn->getLocalName());
+      # recursively merge main child with merg root
+      my $test = $self->_recmerge($mnmt, $mgrn, $cres, $cmtj);
+      return(0) if($cres eq 'test' && !$test);
     # 0c. just append whole merge doc as last child of main root
-    } else {
+    } elsif($cres ne 'test') {
       print "Root Node Element names differ so appending mgrn as last child of mnrn!\n" if($DBUG);
       $mnrn->appendChild($mgrn);
       my $text = XML::XPath::Node::Text->new("\n");
@@ -684,12 +627,15 @@ sub merge {
     print "  mnrn:" . $mnrn->getLocalName() . "\n" if($DBUG);
     print "  mgrn:" . $mgrn->getLocalName() . "\n" if($DBUG);
   }
+  return(1); # true test _cres == no conflict, 0 == conflict
 }
 
-sub _recmerge {
+sub _recmerge { # recursively merge XML elements
   my $self = shift(); # merge() already setup all needed _optn values
   my $mnnd = shift(); # MaiN NoDe
   my $mgnd = shift(); # MerG NoDe
+  my $cres = shift() || $self->get_conflict_resolution_method();
+  my $cmtj = shift() || $self->get_comment_join_method();
   if($mnnd->getLocalName() eq $mgnd->getLocalName()) {
     print "Non-Root Node Element names match so merging in place!\n" if($DBUG);
     foreach($mgnd->findnodes('@*')) {
@@ -698,46 +644,47 @@ sub _recmerge {
       if(defined($mnat)) {
         print "NR  Found matching attr:" . $_->getLocalName() . "\n" if($DBUG);
         if($mnat->getNodeValue() ne $_->getNodeValue()) {
-          if     ($self->{'_optn'}->{'_cres'} eq 'merg') {
+          if     ($cres eq 'merg') {
             print "NR    CRES:merg so setting main attr:" . $_->getLocalName() .  " to merg valu:" . $_->getNodeValue() . "\n" if($DBUG);
             $mnat->setNodeValue($_->getNodeValue());
-          } elsif($self->{'_optn'}->{'_cres'} eq 'warn') {
-            print "!*WARN*! Found conflicting Non-Root attribute:" . $_->getLocalName().
+          } elsif($cres eq 'warn') {
+            croak("!*WARN*! Found conflicting Non-Root attribute:" .
+                                   $_   ->getLocalName() .
               "\n  main value:" .  $mnat->getNodeValue() .
               "\n  merg value:" .  $_   ->getNodeValue() .
-              "\n    Skipping... please resolve manually.\n";
+              "\n    Croaking... please resolve manually.\n");
+          } elsif($cres eq 'test') {
+            return(0);
           }
         }
       } else {
         print "NR  Found new      attr:" . $_->getLocalName() . "\n" if($DBUG);
-        $mnnd->appendAttribute($_);
+        $mnnd->appendAttribute($_) unless($cres eq 'test');
       }
     }
     if($mgnd->findnodes('*')) {
       foreach($mgnd->findnodes('*')) {
         print "NR  Found elem:" . $_->getLocalName() . "\n" if($DBUG);
         my $mtch = 0; # flag to know if already matched
-        foreach my $idat (@{$self->{'_idea'}->{'_ANY_'}}) {
-          my($mgmt)= $_->findnodes('@' . $idat); # MerG MaTch
+        foreach my $idat (@{$self->get_id_xpath_list()}) { # test ID XPaths
+          # if a child merge elem has a matching id, search main for same
+          my($mgmt)= $_->findnodes($idat); # MerG MaTch
           if(defined($mgmt)) {
-            my($mnmt)= $mnnd->findnodes($_->getLocalName() . '[@' . $idat . '="' . $mgmt->getNodeValue() . '"]');
-            if(defined($mnmt)) { # idea matched both main && merg...
-              $mtch = 1;
-              $self->_recmerge($mnmt, $_); # so recursively merge deeper...
+            my $mnmt;
+            if     ($idat =~ /^\/\/\@/) {
+              ($mnmt)= $mnnd->findnodes($_->getLocalName() . '[' . $idat . '="' . $mgmt->getNodeValue() . '"]');
+            } elsif($idat =~ /\[\@\w+\]/) {
+              my $itmp = $idat; my $nval = $mgmt->getNodeValue();
+              $itmp =~ s/(\[\@\w+)\]/$1="$nval"\]/;
+              ($mnmt)= $mnnd->findnodes($itmp);
+            } else {
+              ($mnmt)= $mnnd->findnodes($idat);
             }
-          }
-        }
-        # next see if current elem exists in ID Elem hash
-        if(!$mtch && exists($self->{'_idea'}->{$_->getLocalName()})) {
-          foreach my $idat (@{$self->{'_idea'}->{$_->getLocalName()}}) {
-            # if a child merge elem has a matching _idea, search main for same
-            my($mgmt)= $_->findnodes('@' . $idat); # MerG MaTch
-            if(defined($mgmt)) {
-              my($mnmt)= $mnnd->findnodes($_->getLocalName() . '[@' . $idat . '="' . $mgmt->getNodeValue() . '"]');
-              if(defined($mnmt)) { # idea matched both main && merg...
-                $mtch = 1;
-                $self->_recmerge($mnmt, $_); # so recursively merge deeper..
-              }
+            if(defined($mnmt)) { # id matched both main && merg...
+              print "    Matched elem:" . $_->getLocalName() . '[' . $idat . '="' . $mgmt->getNodeValue() . '"] with elem:' . $mnmt->getLocalName() . "\n" if($DBUG);
+              $mtch = 1; # so recursively merge deeper...
+              my $test = $self->_recmerge($mnmt, $_, $cres, $cmtj);
+              return(0) if($cres eq 'test' && !$test);
             }
           }
         }
@@ -745,45 +692,42 @@ sub _recmerge {
           my($mnmt)= $mnnd->findnodes($_->getLocalName());
           if(defined($mnmt)) { # plain elem matched both main && merg...
             my $fail = 0;
-            foreach my $idat (@{$self->{'_idea'}->{'_ANY_'}}) {
-              my($mnat)= $mnmt->findnodes('@' . $idat); # MaiN ATtribute
-              my($mgat)= $_   ->findnodes('@' . $idat); # MerG ATtribute
+            foreach my $idat (@{$self->get_id_xpath_list()}) {
+              my($mnat)= $mnmt->findnodes($idat); # MaiN ATtribute
+              my($mgat)= $_   ->findnodes($idat); # MerG ATtribute
               $fail = 1 if(defined($mnat) || defined($mgat));
             }
-            if(exists($self->{'_idea'}->{$_->getLocalName()})) {
-              foreach my $idat (@{$self->{'_idea'}->{$_->getLocalName()}}) {
-                my($mnat)= $mnmt->findnodes('@' . $idat); # MaiN ATtribute
-                my($mgat)= $_   ->findnodes('@' . $idat); # MerG ATtribute
-                $fail = 1 if(defined($mnat) || defined($mgat));
-              }
-            }
-            unless($fail) { # fail tests if any unique id attz are in elems
-              $mtch = 1;
-              $self->_recmerge($mnmt, $_); # so recursively merge deeper..
+            unless($fail) { # fail tests if any unique id paths were found
+              $mtch = 1; # so recursively merge deeper...
+              my $test = $self->_recmerge($mnmt, $_, $cres, $cmtj);
+              return(0) if($cres eq 'test' && !$test);
             }
           }
         }
-        # if none above matched, append diff child to main
-        $mnnd->appendChild($_) unless($mtch);
+        # if none above matched, append diff child to main root node
+        $mnnd->appendChild($_) unless($mtch || $cres eq 'test');
       }
     } elsif($mgnd->getChildNodes()) { # no child elems but child text data node
       my($mntx)= $mnnd->getChildNodes();
       my($mgtx)= $mgnd->getChildNodes();
       if(defined($mgtx) && $mgtx->getNodeType() == XML::XPath::Node::TEXT_NODE) {
         print "NR  Found text:" . $mgnd->getLocalName() . " valu:" . $mgtx->getNodeValue() . "\n" if($DBUG);
-        if     (!defined($mntx)) {
+        if     (!defined($mntx) && $cres ne 'test') {
           $mnnd->appendChild($mgtx);
-        } elsif($self->{'_optn'}->{'_cres'} eq 'merg') {
+        } elsif($cres eq 'merg') {
           $mntx->setNodeValue($mgtx->getNodeValue());
-        } elsif($self->{'_optn'}->{'_cres'} eq 'warn') {
-          print "!*WARN*! Found conflicting Non-Root text node:" . $mnnd->getLocalName().
+        } elsif($cres eq 'warn') {
+          croak("!*WARN*! Found conflicting Non-Root text node:" .
+                                 $mnnd->getLocalName() .
             "\n  main value:" .  $mntx->getNodeValue() .
             "\n  merg value:" .  $mgtx->getNodeValue() .
-            "\n    Skipping... please resolve manually.\n";
+            "\n    Croaking... please resolve manually.\n");
+        } elsif($cres eq 'test') {
+          #return(0); # new text node value is not a merge prob?
         }
       }
     }
-  } else { # just append whole merge elem as last child of main elem
+  } elsif($cres ne 'test') { # append whole merge elem as last kid of main elem
     print "Non-Root Node Element names differ so appending mgrn as last child of mnrn!\n" if($DBUG);
     $mnnd->appendChild($mgnd);
     my $text = XML::XPath::Node::Text->new("\n");
@@ -791,250 +735,82 @@ sub _recmerge {
   }
   print "NR  mnnd:" . $mnnd->getLocalName() . "\n" if($DBUG);
   print "NR  mgnd:" . $mgnd->getLocalName() . "\n" if($DBUG);
-}
-
-sub prune { # remove a section of the tree at 'xpath_location'
-  my $self = shift(); my $okey; $self->{'_optn'} = {};
-  my $mtch = join('|', keys(%{$self}));
-  while($okey = shift()) {
-    if     ($okey =~ /^($mtch)$/i) {
-      $self->{'_optn'}->{lc($okey)} = shift();
-    } elsif($okey =~ /xpath_loc/i) {
-      $self->{'_optn'}->{'_xplc'  } = shift();
-    } else {
-      $self->{'_optn'}->{'_xplc'  } = $okey;
-    }
-  }
-  $self->reload(); # make sure all nodes && internal XPath indexing is up2date
-  if(exists( $self->{'_xpob'}           ) &&
-     defined($self->{'_xpob'}           ) &&
-     exists( $self->{'_optn'}->{'_xplc'}) &&
-     defined($self->{'_optn'}->{'_xplc'}) &&
-     length( $self->{'_optn'}->{'_xplc'}) &&
-             $self->{'_optn'}->{'_xplc'} ne '/') { # can't prune root node
-    foreach($self->{'_xpob'}->findnodes($self->{'_optn'}->{'_xplc'})) {
-      print 'Pruning:' . $self->{'_optn'}->{'_xplc'} . "\n" if($DBUG);
-      my $prnt = $_->getParentNode();
-      $prnt->removeChild($_) if(defined($prnt));
-    }
-  }
+  return(1);
 }
 
 sub unmerge { # short-hand for writing a certain xpath_loc out then pruning it
-  my $self = shift(); my $okey; $self->{'_optn'} = {};
-  my $mtch = join('|', keys(%{$self}));
-  while($okey = shift()) {
-    if     ($okey =~ /^($mtch)$/i) {
-      $self->{'_optn'}->{lc($okey)} = shift();
-    } elsif($okey eq 'filename'  ) {
-      $self->{'_optn'}->{'_flnm'  } = shift();
-    } elsif($okey =~ /xpath_loc/i) {
-      $self->{'_optn'}->{'_xplc'  } = shift();
+  my $self = shift(); my @parm; my $xplc = undef; my $flnm = undef;
+  # setup local options
+  for(my $indx = 0; $indx < @_; $indx++) {
+    if     ($_[$indx] =~ /^[-_]?(flnm$|filename)/       && ($indx + 1) < @_) {
+      $flnm = $_[++$indx];
+    } elsif($_[$indx] =~ /^[-_]?(xplc$|xpath_location)/ && ($indx + 1) < @_) {
+      $xplc = $_[++$indx];
     } else {
-      $self->{'_optn'}->{'_xplc'  } = $okey;
+      push(@parm, $_[$indx]);
     }
   }
-  if(exists ($self->{'_optn'}->{'_flnm'}) &&
-     defined($self->{'_optn'}->{'_flnm'}) &&
-     length ($self->{'_optn'}->{'_flnm'}) &&
-     exists ($self->{'_optn'}->{'_xplc'}) &&
-     defined($self->{'_optn'}->{'_xplc'}) &&
-     length ($self->{'_optn'}->{'_xplc'})) {
-    $self->write('filename'  => $self->{'_optn'}->{'_flnm'},
-                 'xpath_loc' => $self->{'_optn'}->{'_xplc'});
-    $self->prune('xpath_loc' => $self->{'_optn'}->{'_xplc'});
+  if(@parm) {
+    $flnm = shift(@parm) unless(defined($flnm));
+    $xplc = shift(@parm) unless(defined($xplc));
+  }
+  if(defined($flnm) && defined($xplc) &&
+     length ($flnm) && length ($xplc)) {
+    $self->write($flnm,
+                 $xplc);
+    $self->prune($xplc);
   }
 }
 
 # Accessors
-sub _filename {
-  my $self = shift(); my $newv = shift();
-  $self->{'_flnm'} = $newv if(defined($newv));
-  return($self->{'_flnm'});
-}
-
-sub _xpath_object {
-  my $self = shift(); my $newv = shift();
-  $self->{'_xpob'} = $newv if(defined($newv));
-  return($self->{'_xpob'});
-}
-
-sub _id_element_attributes {
-  my $self = shift(); my $newv = shift();
-  $self->{'_idea'} = $newv if(defined($newv));
-  return($self->{'_idea'});
-}
-
-sub _mo_conflict_resolution_method {
-  my $self = shift(); my $newv = shift();
-  $self->{'_cres'} = $newv if(defined($newv));
-  return($self->{'_cres'});
-}
-
-sub _mo_comment_join_method {
-  my $self = shift(); my $newv = shift();
-  $self->{'_cmtj'} = $newv if(defined($newv));
-  return($self->{'_cmtj'});
-}
-
-sub reload { # dump XML text && reload object to re-index all nodes cleanly
+sub get_object_to_merge {
   my $self = shift();
-  if(exists ($self->{'_xpob'}) &&
-     defined($self->{'_xpob'})) {
-    my($root)= $self->{'_xpob'}->findnodes('/');
-    my $data = qq(<?xml version="1.0" encoding="utf-8"?>\n);
-    $data .= $_->toString() foreach($root->getChildNodes());
-    $self->{'_xpob'} = XML::XPath->new('xml' => $data);
-  }
+  return($self->{'_object_to_merge'});
 }
 
-# strips out all text nodes from any mixed content (ie. anywhere a text node
-#   is a sibling of an element or comment)
-sub strip {
+sub set_object_to_merge {
   my $self = shift();
-  if(exists ($self->{'_xpob'}) &&
-     defined($self->{'_xpob'})) {
-    my @nodz = $self->{'_xpob'}->findnodes('//*');
-    foreach(@nodz) {
-      if($_->getNodeType() eq XML::XPath::Node::ELEMENT_NODE) {
-        my @kidz = $_->getChildNodes();
-        foreach my $kidd (@kidz) {
-          if($kidd->getNodeType() eq XML::XPath::Node::TEXT_NODE && @kidz > 1) {
-            if($kidd->getValue() =~ /^\s*$/) {
-              $kidd->setValue(''); # empty them all out
-            }
-          }
-        }
-      }
-    }
-    $self->reload(); # reload all XML as text to re-index nodes
-  }
+  $self->{'_object_to_merge'} = shift() if(@_);
+  return($self->{'_object_to_merge'});
 }
 
-# tidy XML indenting where indent_type is either 'spaces' or 'tabs' &&
-#   indent_repeat is how many indent_type characters should be used per indent
-sub tidy {
-  my $self = shift(); my $okey; $self->{'_optn'} = {};
-  my $mtch = join('|', keys(%{$self}));
-  while($okey = shift()) {
-    if   ($okey =~ /^($mtch)$/i) {
-      $self->{'_optn'}->{lc($okey)} = shift();
-    } elsif($okey =~ /indent_type/i) {
-      $self->{'_optn'}->{'_ityp'  } = shift();
-    } elsif($okey =~ /indent_rep/i ) {
-      $self->{'_optn'}->{'_irep'  } = shift();
-    } else {
-      $self->{'_optn'}->{'_ityp'  } = $okey;
-    }
-  }
-  unless(exists ($self->{'_optn'}->{'_ityp'}) &&
-         defined($self->{'_optn'}->{'_ityp'})) {
-    $self->{'_optn'}->{'_ityp'} = ' ';
-  }
-  if(exists ($self->{'_optn'}->{'_ityp'}) &&
-     defined($self->{'_optn'}->{'_ityp'})) {
-    if     ($self->{'_optn'}->{'_ityp'} =~ /^(spac| )/i) {
-      $self->{'_optn'}->{'_ityp'} = ' ';
-    } elsif($self->{'_optn'}->{'_ityp'} =~ /^(tab|\t)/i) {
-      $self->{'_optn'}->{'_ityp'} = "\t";
-    }
-  }
-  unless(exists ($self->{'_optn'}->{'_irep'}) &&
-         defined($self->{'_optn'}->{'_irep'})) {
-    if($self->{'_optn'}->{'_ityp'} eq ' ') {
-      $self->{'_optn'}->{'_irep'} = 2;
-    } else {
-      $self->{'_optn'}->{'_irep'} = 1;
-    }
-  }
-  $self->strip(); # strips all non mixed-content text nodes from object
-  # now insert new nodes with newlines && indenting by tree nesting depth
-  my $dpth = 0; # keep track of element nest depth
-  my $tnod = undef; # temporary node which will get nodes surrounding children
-  my $docu = XML::XPath::Node::Element->new(); # temporary document root node
-  if(exists ($self->{'_xpob'}) &&
-     defined($self->{'_xpob'})) {
-    foreach($self->{'_xpob'}->findnodes('processing-instruction()'),
-            $self->{'_xpob'}->findnodes('comment()')) {
-      print "NodeType:" . $_->getNodeType() . " = " . $_->toString() .
-             "\n  pos:" . $_->get_pos() .
-           " Glob_pos:" . $_->get_global_pos() . "\n" if($DBUG);
-      $docu->appendChild($_); # consider insertBefore($posi)
-    }
-    my($root)= $self->{'_xpob'}->findnodes('/*');
-    print "RT  Found new      elem:" . $root->getName() . "\n" if($DBUG);
-    if($root->getChildNodes()) {
-      $tnod = $self->_rectidy($root, ($dpth + 1)); # recursively tidy children
-    }
-    $docu->appendChild($tnod);
-    $self->{'_xpob'} = $docu;
-  }
+sub get_conflict_resolution_method {
+  my $self = shift();
+  return($self->{'_conflict_resolution_method'});
 }
 
-sub _rectidy { # recursively tidy up indent formatting of elements
-  my $self = shift(); my $node = shift(); my $dpth = shift();
-  my $tnod = undef; # temporary node which will get nodes surrounding children
-  $tnod = XML::XPath::Node::Element->new($node->getName());
-  foreach($node->findnodes('@*')) { # copy all attributes
-    print "RT  Found new      attr:" . $_->getName() . "\n" if($DBUG);
-    $tnod->appendAttribute($_);
-  }
-  foreach($node->getNamespaces()) { # copy all namespaces
-    print "RT  Found new namespace:" . $_->toString() .
-                          "\n  pos:" . $_->get_pos() .
-                        " Glob_pos:" . $_->get_global_pos() . "\n" if($DBUG);
-    $tnod->appendNamespace($_);
-  }
-  my @kidz = $node->getChildNodes(); my $lkid;
-  foreach my $kidd (@kidz) {
-    if($kidd->getNodeType() ne XML::XPath::Node::TEXT_NODE && (!$lkid ||
-       $lkid->getNodeType() ne XML::XPath::Node::TEXT_NODE)) {
-      $tnod->appendChild(XML::XPath::Node::Text->new("\n" . ($self->{'_optn'}->{'_ityp'} x ($self->{'_optn'}->{'_irep'} *  $dpth     ))));
-    }
-    if($kidd->getNodeType() eq XML::XPath::Node::ELEMENT_NODE) {
-      my @gkdz = $kidd->getChildNodes();
-      if(@gkdz    && ($gkdz[0]->getNodeType() ne XML::XPath::Node::TEXT_NODE ||
-        (@gkdz > 1 && $gkdz[1]->getNodeType() ne XML::XPath::Node::TEXT_NODE))) {
-        $kidd = $self->_rectidy($kidd, ($dpth + 1)); # recursively tidy
-      }
-    }
-    $tnod->appendChild($kidd);
-    $lkid = $kidd;
-  }
-  $tnod->appendChild(XML::XPath::Node::Text->new("\n" . ($self->{'_optn'}->{'_ityp'} x ($self->{'_optn'}->{'_irep'} * ($dpth - 1)))));
-  return($tnod);
+sub set_conflict_resolution_method {
+  my $self = shift();
+  $self->{'_conflict_resolution_method'} = shift() if(@_);
+  return($self->{'_conflict_resolution_method'});
 }
 
-sub write {
-  my $self = shift(); my $okey; $self->{'_optn'} = {};
-  my $mtch = join('|', keys(%{$self})); my $root;
-  while($okey = shift()) {
-    if   ($okey =~ /^($mtch)$/i) {
-      $self->{'_optn'}->{lc($okey)} = shift();
-    } elsif($okey eq 'filename'  ) {
-      $self->{'_optn'}->{'_flnm'  } = shift();
-    } elsif($okey =~ /xpath_loc/i) {
-      $self->{'_optn'}->{'_xplc'  } = shift();
+sub get_comment_join_method {
+  my $self = shift();
+  return($self->{'_comment_join_method'});
+}
+
+sub set_comment_join_method {
+  my $self = shift();
+  $self->{'_comment_join_method'} = shift() if(@_);
+  return($self->{'_comment_join_method'});
+}
+
+sub get_id_xpath_list {
+  my $self = shift();
+  return($self->{'_id_xpath_list'});
+}
+
+sub set_id_xpath_list {
+  my $self = shift();
+  if(@_) {
+    if(@_ == 1 && ref($_[0]) eq 'ARRAY') {
+      $self->{'_id_xpath_list'} = shift();
     } else {
-      $self->{'_optn'}->{'_flnm'  } = $okey;
+      $self->{'_id_xpath_list'} = [ @_ ];
     }
   }
-  unless(exists ($self->{'_optn'}->{'_flnm'}) &&
-         defined($self->{'_optn'}->{'_flnm'})) {
-    $self->{'_optn'}->{'_flnm'} = $self->{'_flnm'};
-  }
-  if(exists($self->{'_optn'}->{'_xplc'})) {
-       $root = XML::XPath::Node::Element->new();
-    my($rtnd)= $self->{'_xpob'}->findnodes($self->{'_optn'}->{'_xplc'});
-       $root->appendChild($rtnd);
-  } else {
-    ($root)= $self->{'_xpob'}->findnodes('/');
-  }
-  my @kids = $root->getChildNodes();
-  open( FILE, '>' . $self->{'_optn'}->{'_flnm'});
-  print FILE qq(<?xml version="1.0" encoding="utf-8"?>\n);
-  print FILE $_->toString() , "\n" foreach(@kids);
-  close(FILE);
+  return($self->{'_id_xpath_list'});
 }
 
 127;

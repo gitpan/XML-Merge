@@ -1,0 +1,380 @@
+!/usr/bin/perl -w
+ 4AIDCLW - XML::Merge.pm created by Pip Stuart <Pip@CPAN.Org>
+   to intelligently merge && tidy XML documents as parsed
+   XML::XPath objects.
+ Note: I didn't use '#!/usr/bin/perl -w' above because I need to redefine
+   node_test() && toString() XPath functions below in order to preserve
+   processing-instructions in merged or tidied documents.  Normally -w
+   warnings are very good. =)
+ Note: heh now -w is back because I'm commenting the overrides below. =)
+
+ Plan:
+   if    same-named root nodes,
+     merge straight
+   elsif root of 2nd exists in 1st,
+     merge at first match
+   else
+     append 2nd root as new last child of 1st root
+
+     XML::Merge new(filename => 'fnam'[, <other options> ]) (inherit XPath?)
+       just creates XPath obj but has merge() member which creates another
+       XPobj && blends result back into main obj.
+     optn:
+       merge below specified context
+       id attributes: 'id', 'name', && 'handle' (default)
+       join comments of same context (default)
+       source-file-stamp merged comments
+              time-stamp merged comments
+                pt-stamp merged comments
+     conflict rules:
+       main    wins (default)
+       last-in wins (aka. clobber)
+       newer modification date wins
+       warn
+     members:
+       merge() (can accept tmp override optz)
+       write()
+       prune()
+       unmerge()
+
+   option to rename some XPath to something else so like simple example
+     is taking merge-file's root node element && pretending it is
+     named the same as the main-file's root node element so that the
+     two can merge in place even though their root node elements had
+     different names.  This would clobber the name of the merge-file
+     element with the main-file one but it would be a useful option.
+
+
+NAME
+
+XML::Merge - flexibly merge (&& tidy) XML documents
+
+VERSION
+
+This documentation refers to version 1.0.4C2Nf0R of 
+XML::Merge, which was released on Thu Dec  2 23:41:00:27 2004.
+
+SYNOPSIS
+
+  use XML::Merge;
+
+  # create new       XML::Merge object from         MainFile.xml
+  my $main_xml_doc = XML::Merge->new('filename' => 'MainFile.xml');
+  # Merge File2Add.xml                 into         MainFile.xml
+     $main_xml_doc->merge(           'filename' => 'File2Add.xml');
+  # Tidy up the indenting on the merged data
+     $main_xml_doc->tidy();
+  # Write out changes back to MainFile.xml
+     $main_xml_doc->write();
+
+DESCRIPTION
+
+This module utilizes underlying parsed L<XML::XPath> objects to merge
+separate XML documents according to certain rules && configurable
+options.  If both documents have root nodes which are elements of
+the same name, the documents are merged directly.  Otherwise, one
+is merged as a child of the other.  An optional XPath location can
+be specified as the place to perform the merge.  If no location is
+specified, the merge is attempted at the first matching element or is
+appended as the new last child of the other root if no match is found.
+
+This module also contains some utilities for stripping or tidying up
+indenting levels of contained text nodes.  This comes in handy because
+merging documents usually results in the ruination of indentation.
+
+2DO
+
+- mk namespaces && attz stay in order after tidy() or merge()
+
+- fix reload() from messing up unicode escaped &XYZ; components like
+          Copyright &#xA9; -> © && Registered &#xAE; -> ®
+
+- mk _idea take XPath locations instead of elem name keys
+
+- mk good accessors for _idea
+
+- mk txt apnd optn
+
+- handle comment joins && stamping && options
+
+- support modification-time _cres
+
+- fix 03keep.t to pass && pkg
+
+- add _ignr ignore list of merg xplc's to not merge (pre-prune())
+
+- support _idea options where several attz together are single id
+
+-     What else does Merge need?
+
+USAGE
+
+new()
+
+This is the standard Merge object constructor.  It can take
+parameters like an L<XML::XPath> object constructor to initialize
+the primary XML document object (the object which subsequent
+XML documents will be merged into).  These options can be any one of:
+
+  'filename' => 'SomeFile.xml'
+  'xml'      => $variable_which_holds_a_bunch_of_XML_data
+  'ioref'    => $file_InputOutput_reference
+  'context'  => $existing_node_at_specified_context_to_become_new_obj
+
+Merge's new() can also accept merge-option parameters to
+override the default merge behavior.  These include:
+
+  'conflict_resolution_method' => 'main' # main  file wins
+  'conflict_resolution_method' => 'merg' # merge file wins
+  'conflict_resolution_method' => 'warn' # print warnings
+                   # 'last-in_wins' is an alias for 'merg'
+  # other options should be added later according to utility
+
+merge()
+
+The merge() member function can accept the same L<XML::XPath>
+constructor options as new() but this time they are for the
+temporary file which will be merged into the main object.
+Merge-options from new() can also be specified && they will only
+impact one particular invokation of merge().  The specified document
+will be merged into the primary XML document object according to
+the following default merge rules:
+
+  0. If both documents share the same root element name, they are
+       merged directly.
+  1. If they don't share root elements but the temporary merge file's
+       root element is found anywhere within the main file, the merge
+       occurs at the match.
+  2. If no root element match is found, the merge document becomes the
+       new last child of the main file's root element.
+  3. Whenever a deeper level is found with an element of the same name
+       in both documents && either it does not contain any
+       distinguishing attributes or it has attributes which are
+       recognized as 'identifier' (id) attributes (by default, for any
+       element, these are attributes named: 'id', 'name', && 'handle'),
+       a corresponding element is searched for to match && merge with.
+  4. Any remaining (non-id) nodes are merged in document order.
+  5. When a conflict arises as non-id attributes or other nodes merge,
+       the specified conflict_resolution_method merge-option is
+       applied (which by default has the main file data persist at the
+       expense of the merging file data).
+
+Some of the above rules can be overridden first by the object's
+merge-options && second by the particular method call's merge-options.
+Thus, if the default merge-option for conflict resolution is to
+have the main object win && you use the following constructor:
+
+  my $main_xml_doc = XML::Merge->new(
+    'filename'                   => 'MainFile.xml',
+    'conflict_resolution_method' => 'last-in_wins');
+
+... then any $main_xml_doc->merge() call would override the
+default merge behavior by letting the document being merged have
+priority over the main object's document.  However, you could
+supply additional merge-options in the parameter list of your
+specific merge() call like:
+
+  $main_xml_doc->merge(
+    'filename'                   => 'File2Add.xml',
+    'conflict_resolution_method' => 'warn');
+
+... then the latest option would override the already overridden.
+
+merge() can also accept another XML::Merge object as a parameter
+for what to be merged with the main object like:
+
+  $main_xml_doc->merge(
+    'merge_object'               => $another_merge_obj);
+
+or just:
+
+  $main_xml_doc->merge($another_merge_obj);
+
+strip()
+
+The strip() member function searches the Merge object's child
+XPath object for all mixed-content (ie. non-data) text nodes &&
+empties them out.  This will basically unformat (clear out) any
+markup indenting.  strip() is probably barely useful by itself
+but it is needed by tidy() && it is exposed as a method in case
+it comes in handy for other uses.
+
+tidy()
+
+The tidy() member function can take two optional parameters:
+
+  'indent_type'   => 'spaces', # or 'tabs'
+  'indent_repeat' => 2         # number of times to repeat per indent
+
+The default behavior is to use two (2) spaces for each indent level.
+The Merge object's XPath object gets all mixed-content (ie. non-
+data) text nodes reformatted to appropriate indent levels according
+to tree nesting depth.
+
+write()
+
+The write() member function can take an optional filename parameter
+to write out any changes which have resulted from any number of calls
+to merge() or tidy().  If no parameters are given, write() overwrites
+the original primary XML document file.
+
+write() can also accept an XPath location to treat as the root node
+(element) to be written out to a disk file.  If the XPath statement
+matches many elements, only the first encountered will be written out
+as the new root element.  The object will remain unchanged (ie. even
+though the disk file may now have a new root node, the object would
+remain as it was with a potentially different root node that is an
+ancestor of the written one).  If no elements are found at a
+specified XPath location, no file is written.
+
+prune()
+
+The prune() member function takes an XPath location to remove (along
+with all of its attributes && child nodes) from the Merge
+object.
+
+unmerge()
+
+The unmerge() member function is a shorthand for calling both write()
+&& prune() on a certain XPath location which should be written out
+to a disk file before being removed from the Merge object.  This
+process could be the opposite of merge if no original elements or
+attributes overlapped && combined but if combining did happen, this
+would remove original sections of your primary XML document's data
+from your Merge object so please use this carefully.  It is meant
+to help separate a giant object (probably the result of myriad merge()
+calls) back into separate useful well-formed XML documents on disk.
+
+unmerge() should be provided key => value pairs for both 'filename' &&
+'xpath_location'.
+
+Accessors
+
+_filename()
+
+Returns the underlying filename (if any) associated with this object.
+An optional new filename can be provided as a parameter to override
+(or initialize) the object's filename.
+
+_xpath_object()
+
+Returns the underlying L<XML::XPath> object.  An optional L<XML::XPath>
+object can be provided as a parameter to assign the underlying
+object (which will clobber any existing object along with all data
+therein so please use caution).
+
+_mo_conflict_resolution_method()
+
+Returns the underlying merge-option conflict_resolution_method.
+An optional new value can be provided as a parameter to be assigned
+as the XML::Merge object's merge-option.
+
+_mo_comment_join_method()
+
+Returns the underlying merge-option comment_join_method.
+An optional new value can be provided as a parameter to be assigned
+as the XML::Merge object's merge-option.
+
+CHANGES
+
+Revision history for Perl extension XML::Merge:
+
+- 1.0.4C2Nf0R  Thu Dec  2 23:41:00:27 2004
+
+* updated license && prep'd for release
+
+- 1.0.4C2BcI2  Thu Dec  2 11:38:18:02 2004
+
+* updated reload(), strip(), && tidy() to verify _xpob exists
+
+- 1.0.4C1JHOl  Wed Dec  1 19:17:24:47 2004
+
+* commented out override stuff since it's probably bad form && dumps crap
+    warnings all over tests && causes them to fail... so I guess just
+    uncomment that stuff if you care to preserve PI's && escapes
+
+- 1.0.4C1J7gt  Wed Dec  1 19:07:42:55 2004
+
+* made merge() accept merge_source_xpath && merge_destination_xpath params
+
+* made merge() accept other Merge objects
+
+* made reload() not clobber basic escapes (by overloading Text toString())
+
+* made tidy() not kill processing-instructions (by overloading node_test())
+
+* made tidy() not kill comments
+
+- 1.0.4BOHGjm  Wed Nov 24 17:16:45:48 2004
+
+* fixed merge() same elems with diff ids bug
+
+- 1.0.4BNBCZL  Tue Nov 23 11:12:35:21 2004
+
+* rewrote both merge() && _recmerge() _cres stuff since it was
+    buggy before... so hopefully consistently good now
+
+- 1.0.4BMJCPm  Mon Nov 22 19:12:25:48 2004
+
+* fixed merge() for empty elem matching && _cres on text kids
+
+- 1.0.4BMGTLF  Mon Nov 22 16:29:21:15 2004
+
+* separated reload() from strip() so that prune() can call it too
+
+- 1.0.4BM0B3x  Mon Nov 22 00:11:03:59 2004
+
+* fixed tidy() empty elem bug && implemented prune() && unmerge()
+
+- 1.0.4BJAZpM  Fri Nov 19 10:35:51:22 2004
+
+* fixing e() ABSTRACT gen bug
+
+- 1.0.4BJAMR6  Fri Nov 19 10:22:27:06 2004
+
+* fleshed out pod && members
+
+- 1.0.4AIDqmR  Mon Oct 18 13:52:48:27 2004
+
+* original version
+
+INSTALL
+
+If you're using ActiveState, you probably need to:
+  `md C:\Perl\site\lib\XML\' if the dir doesn't exist
+  && copy this file into that directory.
+
+If you don't understand how to do this, please ask for assistance.
+
+Otherwise, please run:
+
+    `perl -MCPAN -e "install XML::Merge"`
+
+or uncompress the package && run the standard:
+
+    `perl Makefile.PL; make; make test; make install`
+
+FILES
+
+XML::Merge requires:
+
+L<Carp>                to allow errors to croak() from calling sub
+
+L<XML::XPath>          to use XPath statements to query && update XML
+
+L<XML::XPath::XMLParser> to parse XML documents into XPath objects
+
+LICENSE
+
+Most source code should be Free!
+  Code I have lawful authority over is && shall be!
+Copyright: (c) 2004, Pip Stuart.
+Copyleft : This software is licensed under the GNU General Public
+  License (version 2), && as such comes with NO WARRANTY.  Please
+  consult the Free Software Foundation (http://FSF.Org) for
+  important information about your freedom.
+
+AUTHOR
+
+Pip Stuart <Pip@CPAN.Org>
+

@@ -45,8 +45,8 @@ XML::Merge - flexibly merge XML documents
 
 =head1 VERSION
 
-This documentation refers to version 1.0.4CAJowN of 
-XML::Merge, which was released on Fri Dec 10 19:50:58:23 2004.
+This documentation refers to version 1.0.4CAL5IS of 
+XML::Merge, which was released on Fri Dec 10 21:05:18:28 2004.
 
 =head1 SYNOPSIS
 
@@ -263,7 +263,7 @@ Revision history for Perl extension XML::Merge:
 
 =over 4
 
-=item - 1.0.4CAJowN  Fri Dec 10 19:50:58:23 2004
+=item - 1.0.4CAL5IS  Fri Dec 10 21:05:18:28 2004
 
 * fixed buggy _recmerge
 
@@ -437,11 +437,11 @@ require      XML::Tidy;
 use base qw( XML::Tidy );
 use Carp;
 use XML::XPath;
-our $VERSION     = '1.0.4CAJowN'; # major . minor . PipTimeStamp
+our $VERSION     = '1.0.4CAL5IS'; # major . minor . PipTimeStamp
 our $PTVR        = $VERSION; $PTVR =~ s/^\d+\.\d+\.//; # strip major and minor
 # Please see `perldoc Time::PT` for an explanation of $PTVR
 
-my $DBUG = 1;
+my $DBUG = 0;
 
 sub new {
   my $clas = shift(); my @parm; my $cres = 'main';

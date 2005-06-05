@@ -45,8 +45,8 @@ XML::Merge - flexibly merge XML documents
 
 =head1 VERSION
 
-This documentation refers to version 1.2.4CCJWiB of 
-XML::Merge, which was released on Sun Dec 12 19:32:44:11 2004.
+This documentation refers to version 1.2.565EgGd of 
+XML::Merge, which was released on Sun Jun  5 14:42:16:39 2005.
 
 =head1 SYNOPSIS
 
@@ -123,7 +123,7 @@ override the default merge behavior.  These include:
                    # 'last-in_wins' is an alias for 'merg'
   'conflict_resolution_method' => 'warn', # croak conflicts
   'conflict_resolution_method' => 'test', # just test, 0 if conflict
-  # this option is not implemented yet
+  # this option is not implemented yet, please say if you need it
   'comment_join_method' => 'none',
 
 =head2 merge()
@@ -182,7 +182,7 @@ It should be used like:
 
   foreach(@files) {
     if($merge_obj->merge('cres' => 'test', $_)) {
-      $merge_obj->merge($_); # only do it if there's no conflicts
+      $merge_obj->merge($_); # only do it if there are no conflicts
     } else {
       croak("Yipes! Conflict with file:$_!\n");
     }
@@ -198,14 +198,16 @@ Along with the merge options that can be specified in the object
 constructor, merge() also accepts the following options to specify
 where to perform the merge relative to:
 
-  'merge_destination_path' => $main_obj_xpath,
-  'merge_source_path'      => $merging_obj_xpath,
+  'merge_destination_path' => $main_obj_xpath_location,
+  'merge_source_path'      => $merging_obj_xpath_location,
 
 =head2 unmerge()
 
 The unmerge() member function is a shorthand for calling both write()
 && prune() on a certain XPath location which should be written out
-to a disk file before being removed from the Merge object.
+to a disk file before being removed from the Merge object.  Please
+see L<XML::Tidy> for documentation of the inherited write() && prune()
+member functions.
 
 This unmerge() process could be the opposite of merge() if no original
 elements or attributes overlapped && combined but if combining did
@@ -257,11 +259,20 @@ attribute value are matched for further merging && conflict resolution.
 
 A new list can assigned to the XML::Merge object's id_xpath_list.
 
+Please note that this list normally contains XPath attributes so they
+must be preceded by an at-symbol (@) like: '@example_id_attribute'.
+
 =head1 CHANGES
 
 Revision history for Perl extension XML::Merge:
 
 =over 4
+
+=item - 1.2.565EgGd  Sun Jun  5 14:42:16:39 2005
+
+* added use XML::Tidy to make sure exports are available
+
+* removed 02prune.t && moved 03keep.t to 02keep.t ... passing tests is good
 
 =item - 1.2.4CCJWiB  Sun Dec 12 19:32:44:11 2004
 
@@ -439,9 +450,9 @@ use warnings;
 use strict;
 require      XML::Tidy;
 use base qw( XML::Tidy );
+use          XML::Tidy;
 use Carp;
-use XML::XPath;
-our $VERSION     = '1.2.4CCJWiB'; # major . minor . PipTimeStamp
+our $VERSION     = '1.2.565EgGd'; # major . minor . PipTimeStamp
 our $PTVR        = $VERSION; $PTVR =~ s/^\d+\.\d+\.//; # strip major and minor
 # Please see `perldoc Time::PT` for an explanation of $PTVR.
 
@@ -603,7 +614,7 @@ sub merge { # under water
       } elsif($mgrn->getChildNodes()) { # no kid elems but kid text data node
         my($mntx)= $mnrn->getChildNodes();
         my($mgtx)= $mgrn->getChildNodes();
-        if(defined($mgtx) && $mgtx->getNodeType() == XML::XPath::Node::TEXT_NODE) {
+        if(defined($mgtx) && $mgtx->getNodeType() == TEXT_NODE) {
           print "  Found text:" . $mgrn->getLocalName() . " valu:" . $mgtx->getNodeValue() . "\n" if($DBUG);
           if     (!defined($mntx)) {
             $mnrn->appendChild($mgtx) unless($cres eq 'test');
@@ -631,8 +642,7 @@ sub merge { # under water
     } elsif($cres ne 'test') {
       print "Root Node Element names differ so appending mgrn as last child of mnrn!\n" if($DBUG);
       $mnrn->appendChild($mgrn);
-      my $text = XML::XPath::Node::Text->new("\n");
-      $mnrn->appendChild($text);
+      $mnrn->appendChild($self->Text("\n"));
     }
     print "  mnrn:" . $mnrn->getLocalName() . "\n" if($DBUG);
     print "  mgrn:" . $mgrn->getLocalName() . "\n" if($DBUG);
@@ -720,7 +730,7 @@ sub _recmerge { # recursively merge XML elements
     } elsif($mgnd->getChildNodes()) { # no child elems but child text data node
       my($mntx)= $mnnd->getChildNodes();
       my($mgtx)= $mgnd->getChildNodes();
-      if(defined($mgtx) && $mgtx->getNodeType() == XML::XPath::Node::TEXT_NODE) {
+      if(defined($mgtx) && $mgtx->getNodeType() == TEXT_NODE) {
         print "NR  Found text:" . $mgnd->getLocalName() . " valu:" . $mgtx->getNodeValue() . "\n" if($DBUG);
         if     (!defined($mntx) && $cres ne 'test') {
           $mnnd->appendChild($mgtx);
@@ -740,8 +750,7 @@ sub _recmerge { # recursively merge XML elements
   } elsif($cres ne 'test') { # append whole merge elem as last kid of main elem
     print "Non-Root Node Element names differ so appending mgrn as last child of mnrn!\n" if($DBUG);
     $mnnd->appendChild($mgnd);
-    my $text = XML::XPath::Node::Text->new("\n");
-    $mnnd->appendChild($text);
+    $mnnd->appendChild($self->Text("\n"));
   }
   print "NR  mnnd:" . $mnnd->getLocalName() . "\n" if($DBUG);
   print "NR  mgnd:" . $mgnd->getLocalName() . "\n" if($DBUG);
@@ -822,5 +831,7 @@ sub set_id_xpath_list {
   }
   return($self->{'_id_xpath_list'});
 }
+
+sub DESTROY { } # do nothing but define in case && to calm test warnings
 
 127;

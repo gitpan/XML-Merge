@@ -2,8 +2,8 @@ Merge.pm
 MANIFEST
 t/00basic.t
 t/01text.t
-t/02prune.t
-t/03keep.t
+t/02keep.t
 MANIFEST.SKIP
 README
 Makefile.PL
+Build.PL
